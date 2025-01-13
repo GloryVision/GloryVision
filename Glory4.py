@@ -136,8 +136,8 @@ class GloryAI:
 glory = GloryAI()
 
 # Prüfen auf Updates
-update_url = "https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/Glory.py"  # Beispiel-URL für den Code
-version_url = "https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/version.txt"  # Beispiel-URL für die Version
+update_url = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/Glory4.py"  # Beispiel-URL für den Code
+version_url = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/version.txt"  # Beispiel-URL für die Version
 
 update_available, info = glory.check_for_update(version_url)
 if update_available:
