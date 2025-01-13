@@ -122,7 +122,7 @@ class GloryAI:
             response = requests.get(version_url)
             if response.status_code == 200:
                 latest_version = response.text.strip()
-                current_version = "1.0.0"  # Setze die aktuelle Programmversion hier
+                current_version = "1.0.5"  # Setze die aktuelle Programmversion hier
                 if latest_version > current_version:
                     return True, latest_version
                 else:
