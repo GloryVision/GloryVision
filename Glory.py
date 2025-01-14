@@ -5,19 +5,20 @@ from bs4 import BeautifulSoup
 import os
 import json
 import sys
-import subprocess
+import time
 
 class GloryAI:
     def __init__(self):
         self.knowledge = {}
         self.load_knowledge()
+        self.custom_layout = {}
+        self.load_custom_layout()
 
     def respond(self, question):
         question = question.lower()
         if question in self.knowledge:
             return self.knowledge[question]
         else:
-            # Frage nach Erlaubnis, im Internet zu suchen
             response = "Das weiß ich leider noch nicht. Soll ich im Internet nachsehen?"
             if messagebox.askyesno("Internet", response):
                 internet_response = self.search_internet(question)
@@ -36,16 +37,12 @@ class GloryAI:
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 paragraphs = soup.find_all('p')
-                
-                # Sammle die ersten sinnvollen Absätze
                 collected_data = []
                 for paragraph in paragraphs:
                     if paragraph.text.strip():
                         collected_data.append(paragraph.text.strip())
-                        if len(collected_data) >= 3:  # Begrenze die Anzahl der Absätze
+                        if len(collected_data) >= 3:
                             break
-                
-                # Speichere die gesammelten Daten in den Wissensspeicher
                 if collected_data:
                     combined_data = " ".join(collected_data)
                     self.train(query, combined_data)
@@ -66,165 +63,164 @@ class GloryAI:
             with open("knowledge.json", "r") as file:
                 self.knowledge = json.load(file)
 
-    def log_search(self, query, result):
-        with open("search_log.txt", "a") as file:
-            file.write(f"Query: {query}\nResult: {result}\n{'-'*50}\n")
+    def save_custom_layout(self):
+        with open("layout.json", "w") as file:
+            json.dump(self.custom_layout, file)
 
-    def modify_program(self, pattern, replacement):
-        """Ändere den Code basierend auf dem gegebenen Muster und Ersatz."""
+    def load_custom_layout(self):
+        if os.path.exists("layout.json"):
+            with open("layout.json", "r") as file:
+                self.custom_layout = json.load(file)
+
+    def add_custom_button(self, button_name, command):
+        self.custom_layout[button_name] = command
+        self.save_custom_layout()
+
+    def get_knowledge_version(self, knowledge_version_url):
+        """Holt die Version der Wissensdatei vom Server."""
         try:
-            with open(__file__, "r") as file:
-                code = file.read()
-
-            # Ersetze den Code basierend auf dem gegebenen Muster
-            if pattern in code:
-                new_code = code.replace(pattern, replacement)
-
-                # Schreibe den neuen Code zurück in die Datei
-                with open(__file__, "w") as file:
-                    file.write(new_code)
-
-                return "Der Code wurde erfolgreich geändert."
-            else:
-                return "Das Muster wurde im Code nicht gefunden."
-        except Exception as e:
-            return f"Ein Fehler ist aufgetreten: {str(e)}"
-
-    def update_program(self, update_url):
-        """Ändert den Programmcode durch Download der neuesten Version."""
-        try:
-            response = requests.get(update_url, stream=True)
+            response = requests.get(knowledge_version_url)
             if response.status_code == 200:
-                temp_file = "temp_update.exe"
-                with open(temp_file, "wb") as file:
+                return response.text.strip()
+            else:
+                print(f"Fehler beim Abrufen der Wissensdatei-Version: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"Ein Fehler ist aufgetreten: {str(e)}")
+            return None
+
+    def ensure_knowledge_file(self, knowledge_url, knowledge_version_url, file_name, version_file_name):
+        """Stellt sicher, dass die Wissensdatei aktuell ist."""
+        server_version = self.get_knowledge_version(knowledge_version_url)
+        if not server_version:
+            print("Konnte die Wissensdatei-Version nicht abrufen. Überspringe Update.")
+            return
+
+        local_version = None
+        if os.path.exists(version_file_name):
+            with open(version_file_name, "r") as version_file:
+                local_version = version_file.read().strip()
+
+        if local_version != server_version:
+            print("Wissensdatei ist veraltet oder fehlt. Lade sie herunter...")
+            if self.download_file(knowledge_url, file_name):
+                with open(version_file_name, "w") as version_file:
+                    version_file.write(server_version)
+                print("Wissensdatei erfolgreich aktualisiert.")
+            else:
+                print("Fehler beim Herunterladen der Wissensdatei.")
+        else:
+            print("Wissensdatei ist aktuell.")
+
+    def download_file(self, url, file_name):
+        """Lädt eine Datei von einer URL herunter."""
+        try:
+            response = requests.get(url, stream=True)
+            if response.status_code == 200:
+                with open(file_name, "wb") as file:
                     file.write(response.content)
-                
-                # Starte die neue Datei und beende die aktuelle Instanz
-                os.startfile(temp_file)
-                sys.exit()  # Beendet das aktuelle Programm
+                return True
             else:
-                return f"Fehler beim Herunterladen der Aktualisierung: {response.status_code}"
+                print(f"Fehler beim Herunterladen der Datei: {response.status_code}")
+                return False
         except Exception as e:
-            return f"Ein Fehler ist aufgetreten: {str(e)}"
-
-    def restart_program(self):
-        """Startet das Programm neu."""
-        python = sys.executable
-        os.execl(python, python, *sys.argv)
-
-    def check_for_update(self, version_url):
-        """Prüft, ob eine neue Version verfügbar ist."""
-        try:
-            response = requests.get(version_url)
-            if response.status_code == 200:
-                latest_version = response.text.strip()
-                current_version = "1.0.0"  # Setze die aktuelle Programmversion hier
-                if latest_version > current_version:
-                    return True, latest_version
-                else:
-                    return False, current_version
-            else:
-                return False, "Fehler bei der Versionsprüfung"
-        except Exception as e:
-            return False, f"Ein Fehler ist aufgetreten: {str(e)}"
+            print(f"Ein Fehler ist aufgetreten: {str(e)}")
+            return False
 
 # KI-Instanz
-glory = GloryAI()
+if __name__ == "__main__":
+    # URLs und Versionsinformationen
+    VERSION_URL = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/version.txt"
+    UPDATE_URL = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/Glory.exe"
+    KNOWLEDGE_URL = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/knowledge.json"
+    KNOWLEDGE_VERSION_URL = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/knowledge_version.txt"
+    CURRENT_VERSION = "1.0.0"  # Aktuelle Version
 
-# Prüfen auf Updates
-update_url = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/Glory4.py"  # Beispiel-URL für den Code
-version_url = "https://raw.githubusercontent.com/GloryVision/GloryVision/main/version.txt"  # Beispiel-URL für die Version
+    # Dateinamen
+    CURRENT_FILE = "Glory.exe"
+    NEW_FILE = "Glory_new.exe"
+    KNOWLEDGE_FILE = "knowledge.json"
+    KNOWLEDGE_VERSION_FILE = "knowledge_version.txt"
 
-update_available, info = glory.check_for_update(version_url)
-if update_available:
-    if messagebox.askyesno("Update verfügbar", f"Eine neue Version ({info}) ist verfügbar. Jetzt aktualisieren?"):
-        glory.update_program(update_url)
+    # Prüfe auf Updates
+    try:
+        response = requests.get(VERSION_URL)
+        if response.status_code == 200:
+            latest_version = response.text.strip()
+            if latest_version > CURRENT_VERSION:
+                print(f"Neue Version gefunden: {latest_version}. Update wird heruntergeladen...")
+                response = requests.get(UPDATE_URL, stream=True)
+                with open(NEW_FILE, "wb") as file:
+                    file.write(response.content)
+                print("Update wird angewendet...")
+                os.remove(CURRENT_FILE)
+                os.rename(NEW_FILE, CURRENT_FILE)
+                os.startfile(CURRENT_FILE)
+                sys.exit()
+            else:
+                print("Keine Updates verfügbar. Überprüfe die Wissensdatei...")
+        else:
+            print(f"Fehler beim Abrufen der Version: {response.status_code}")
+    except Exception as e:
+        print(f"Ein Fehler ist aufgetreten: {str(e)}")
 
-# GUI erstellen
-root = tk.Tk()
-root.title("Glory AI")
-root.geometry("500x600")
-root.configure(bg="#f0f8ff")
+    # Stelle sicher, dass die Wissensdatei vorhanden und aktuell ist
+    glory = GloryAI()
+    glory.ensure_knowledge_file(KNOWLEDGE_URL, KNOWLEDGE_VERSION_URL, KNOWLEDGE_FILE, KNOWLEDGE_VERSION_FILE)
 
-# Kopfbereich
-header = tk.Frame(root, bg="#f0f8ff", pady=10)
-header.pack(fill="x")
+    # GUI erstellen
+    root = tk.Tk()
+    root.title("Glory AI")
+    root.geometry("500x600")
+    root.configure(bg="#f0f8ff")
 
-sun_icon = tk.Label(header, text="☀", font=("Arial", 24), bg="#f0f8ff", fg="#ffcc00")
-sun_icon.pack(side="left", padx=10)
+    header = tk.Frame(root, bg="#f0f8ff", pady=10)
+    header.pack(fill="x")
 
-title = tk.Label(header, text="Glory AI", font=("Arial", 20, "bold"), bg="#f0f8ff", fg="#4682b4")
-title.pack(side="left")
+    sun_icon = tk.Label(header, text="☀", font=("Arial", 24), bg="#f0f8ff", fg="#ffcc00")
+    sun_icon.pack(side="left", padx=10)
 
-# Chatbereich
-chat_frame = tk.Frame(root, bg="#f0f8ff")
-chat_frame.pack(padx=10, pady=10, fill="both", expand=True)
+    title = tk.Label(header, text="Glory AI", font=("Arial", 20, "bold"), bg="#f0f8ff", fg="#4682b4")
+    title.pack(side="left")
 
-chat_box = tk.Text(chat_frame, wrap="word", height=20, state="normal", bg="#ffffff", fg="#000000", font=("Arial", 12))
-chat_box.pack(padx=5, pady=5, fill="both", expand=True)
+    chat_frame = tk.Frame(root, bg="#f0f8ff")
+    chat_frame.pack(padx=10, pady=10, fill="both", expand=True)
 
-chat_scroll = tk.Scrollbar(chat_frame, command=chat_box.yview)
-chat_box["yscrollcommand"] = chat_scroll.set
-chat_scroll.pack(side="right", fill="y")
+    chat_box = tk.Text(chat_frame, wrap="word", height=20, state="normal", bg="#ffffff", fg="#000000", font=("Arial", 12))
+    chat_box.pack(padx=5, pady=5, fill="both", expand=True)
 
-# Eingabefeld
-input_frame = tk.Frame(root, bg="#f0f8ff")
-input_frame.pack(padx=10, pady=10, fill="x")
+    chat_scroll = tk.Scrollbar(chat_frame, command=chat_box.yview)
+    chat_box["yscrollcommand"] = chat_scroll.set
+    chat_scroll.pack(side="right", fill="y")
 
-user_input = tk.Entry(input_frame, font=("Arial", 12), width=40)
-user_input.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+    input_frame = tk.Frame(root, bg="#f0f8ff")
+    input_frame.pack(padx=10, pady=10, fill="x")
+
+    user_input = tk.Entry(input_frame, font=("Arial", 12), width=40)
+    user_input.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+
+send_button = tk.Button(input_frame, text="Senden", font=("Arial", 12), bg="#4682b4", fg="white",
+                        command=lambda: send_message())
+send_button.pack(side="right", padx=5, pady=5)
 
 def send_message():
-    user_message = user_input.get()
-    if not user_message.strip():
+    """Sendet die Benutzereingabe an die KI und zeigt die Antwort an."""
+    message = user_input.get().strip()
+    if not message:
+        messagebox.showwarning("Fehler", "Bitte eine Nachricht eingeben.")
         return
-    chat_box.insert(tk.END, f"Du: {user_message}\n")
-    response = glory.respond(user_message)
-    chat_box.insert(tk.END, f"Glory: {response}\n\n")
-    user_input.delete(0, tk.END)
+    chat_box.configure(state="normal")
+    chat_box.insert("end", f"Du: {message}\n")
+    chat_box.configure(state="disabled")
+    user_input.delete(0, "end")
 
-def collect_information():
-    topic = user_input.get().strip()
-    if topic:
-        response = glory.search_internet(topic)
-        messagebox.showinfo("Information gesammelt", response)
-    else:
-        messagebox.showwarning("Fehler", "Bitte ein Thema eingeben.")
+    response = glory.respond(message)
+    chat_box.configure(state="normal")
+    chat_box.insert("end", f"Glory: {response}\n\n")
+    chat_box.configure(state="disabled")
+    chat_box.see("end")
 
-send_button = tk.Button(input_frame, text="Senden", command=send_message, bg="#4682b4", fg="#ffffff", font=("Arial", 12, "bold"))
-send_button.pack(side="left", padx=5)
+# Event für die Enter-Taste
+root.bind("<Return>", lambda event: send_message())
 
-collect_button = tk.Button(input_frame, text="Information sammeln", command=collect_information, bg="#4682b4", fg="#ffffff", font=("Arial", 12, "bold"))
-collect_button.pack(side="left", padx=5)
-
-update_button = tk.Button(input_frame, text="Update ausführen", command=lambda: glory.update_program(update_url), bg="#4682b4", fg="#ffffff", font=("Arial", 12, "bold"))
-update_button.pack(side="left", padx=5)
-
-# Wissen hinzufügen
-knowledge_frame = tk.LabelFrame(root, text="Glory trainieren", bg="#f0f8ff", fg="#4682b4", font=("Arial", 12))
-knowledge_frame.pack(padx=10, pady=10, fill="x")
-
-tk.Label(knowledge_frame, text="Frage:", bg="#f0f8ff", font=("Arial", 12)).grid(row=0, column=0, sticky="w")
-entry_question = tk.Entry(knowledge_frame, font=("Arial", 12), width=30)
-entry_question.grid(row=0, column=1, padx=5, pady=5)
-
-tk.Label(knowledge_frame, text="Antwort:", bg="#f0f8ff", font=("Arial", 12)).grid(row=1, column=0, sticky="w")
-entry_answer = tk.Entry(knowledge_frame, font=("Arial", 12), width=30)
-entry_answer.grid(row=1, column=1, padx=5, pady=5)
-
-def add_knowledge():
-    question = entry_question.get().strip()
-    answer = entry_answer.get().strip()
-    if question and answer:
-        glory.train(question, answer)
-        messagebox.showinfo("Erfolg", f"Neue Information hinzugefügt:\nFrage: {question}\nAntwort: {answer}")
-        entry_question.delete(0, tk.END)
-        entry_answer.delete(0, tk.END)
-    else:
-        messagebox.showwarning("Fehler", "Bitte sowohl Frage als auch Antwort ausfüllen.")
-
-add_button = tk.Button(knowledge_frame, text="Hinzufügen", command=add_knowledge, bg="#4682b4", fg="#ffffff", font=("Arial", 12))
-add_button.grid(row=2, column=0, columnspan=2, pady=10)
-
-# Hauptloop starten
 root.mainloop()
