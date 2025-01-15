@@ -227,7 +227,7 @@ if __name__ == "__main__":
     user_input.pack(side="left", padx=5, pady=5, fill="x", expand=True)
     user_input.bind("<Return>", handle_input)
 
-    send_button = tk.Button(user_input_frame, text="Senden", font=("Arial", 12), bg="#4682b4", fg="#ffffff", command=handle_input)
+    send_button = tk.Button(input_frame, text="Senden", font=("Arial", 12), bg="#4682b4", fg="#ffffff", command=handle_input)
     send_button.pack(side="right", padx=5)
 
     def close_application():
