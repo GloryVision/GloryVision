@@ -19,12 +19,9 @@ class GloryAI:
         if question in self.knowledge:
             return self.knowledge[question]
         else:
-            response = "Das weiß ich leider noch nicht. Soll ich im Internet nachsehen?"
-            if messagebox.askyesno("Internet", response):
-                internet_response = self.search_internet(question)
-                return internet_response
-            else:
-                return "Okay, ich werde nicht suchen."
+            response = "Das weiß ich leider noch nicht. Ich werde im Internet nachsehen."
+            internet_response = self.search_internet(question)
+            return internet_response
 
     def train(self, question, answer):
         self.knowledge[question.lower()] = answer
@@ -32,15 +29,17 @@ class GloryAI:
 
     def search_internet(self, query):
         try:
-            url = f"https://en.wikipedia.org/wiki/{query.replace(' ', '_')}"
-            response = requests.get(url)
+            search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+            response = requests.get(search_url, headers=headers)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                paragraphs = soup.find_all('p')
+                snippets = soup.find_all('span', {'class': 'aCOpRe'})
                 collected_data = []
-                for paragraph in paragraphs:
-                    if paragraph.text.strip():
-                        collected_data.append(paragraph.text.strip())
+                for snippet in snippets:
+                    text = snippet.get_text().strip()
+                    if text:
+                        collected_data.append(text)
                         if len(collected_data) >= 3:
                             break
                 if collected_data:
@@ -127,6 +126,16 @@ class GloryAI:
             print(f"Ein Fehler ist aufgetreten: {str(e)}")
             return False
 
+    def save_chat_history(self, chat_history):
+        with open("chat_history.json", "w") as file:
+            json.dump(chat_history, file)
+
+    def load_chat_history(self):
+        if os.path.exists("chat_history.json"):
+            with open("chat_history.json", "r") as file:
+                return json.load(file)
+        return []
+
 # KI-Instanz
 if __name__ == "__main__":
     # URLs und Versionsinformationen
@@ -174,6 +183,24 @@ if __name__ == "__main__":
     root.geometry("500x600")
     root.configure(bg="#f0f8ff")
 
+    chat_history = glory.load_chat_history()
+
+    def update_chat(message, sender="User"):
+        chat_box.configure(state="normal")
+        chat_box.insert("end", f"{sender}: {message}\n")
+        chat_box.see("end")
+        chat_box.configure(state="disabled")
+        chat_history.append({"sender": sender, "message": message})
+        glory.save_chat_history(chat_history)
+
+    def handle_input(event=None):
+        user_message = user_input.get()
+        if user_message.strip():
+            update_chat(user_message, sender="User")
+            response = glory.respond(user_message)
+            update_chat(response, sender="Glory")
+        user_input.delete(0, "end")
+
     header = tk.Frame(root, bg="#f0f8ff", pady=10)
     header.pack(fill="x")
 
@@ -186,7 +213,7 @@ if __name__ == "__main__":
     chat_frame = tk.Frame(root, bg="#f0f8ff")
     chat_frame.pack(padx=10, pady=10, fill="both", expand=True)
 
-    chat_box = tk.Text(chat_frame, wrap="word", height=20, state="normal", bg="#ffffff", fg="#000000", font=("Arial", 12))
+    chat_box = tk.Text(chat_frame, wrap="word", height=20, state="disabled", bg="#ffffff", fg="#000000", font=("Arial", 12))
     chat_box.pack(padx=5, pady=5, fill="both", expand=True)
 
     chat_scroll = tk.Scrollbar(chat_frame, command=chat_box.yview)
@@ -198,29 +225,20 @@ if __name__ == "__main__":
 
     user_input = tk.Entry(input_frame, font=("Arial", 12), width=40)
     user_input.pack(side="left", padx=5, pady=5, fill="x", expand=True)
+    user_input.bind("<Return>", handle_input)
 
-send_button = tk.Button(input_frame, text="Senden", font=("Arial", 12), bg="#4682b4", fg="white",
-                        command=lambda: send_message())
-send_button.pack(side="right", padx=5, pady=5)
+    send_button = tk.Button(user_input_frame, text="Senden", font=("Arial", 12), bg="#4682b4", fg="#ffffff", command=handle_input)
+    send_button.pack(side="right", padx=5)
 
-def send_message():
-    """Sendet die Benutzereingabe an die KI und zeigt die Antwort an."""
-    message = user_input.get().strip()
-    if not message:
-        messagebox.showwarning("Fehler", "Bitte eine Nachricht eingeben.")
-        return
-    chat_box.configure(state="normal")
-    chat_box.insert("end", f"Du: {message}\n")
-    chat_box.configure(state="disabled")
-    user_input.delete(0, "end")
+    def close_application():
+        if messagebox.askyesno("Beenden", "Möchten Sie die Anwendung wirklich beenden?"):
+            root.destroy()
 
-    response = glory.respond(message)
-    chat_box.configure(state="normal")
-    chat_box.insert("end", f"Glory: {response}\n\n")
-    chat_box.configure(state="disabled")
-    chat_box.see("end")
+    root.protocol("WM_DELETE_WINDOW", close_application)
 
-# Event für die Enter-Taste
-root.bind("<Return>", lambda event: send_message())
+    # Chat-Historie wiederherstellen
+    for entry in chat_history:
+        update_chat(entry["message"], sender=entry["sender"])
 
-root.mainloop()
+    root.mainloop()
+   
